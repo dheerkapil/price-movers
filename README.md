@@ -55,7 +55,11 @@ The workflow needs two repository secrets:
 | Secret | Value |
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | token of the `Price_alerts` bot |
-| `TELEGRAM_CHAT_ID` | chat id the CSV should be posted to |
+| `TELEGRAM_CHAT_ID` | optional — chat id the CSV should be posted to |
+
+Only the bot token is required. If `TELEGRAM_CHAT_ID` is not set, the script
+asks Telegram for the bot's recent updates and uses the chat that last messaged
+it, so sending the bot a single message once is enough.
 
 Add them under **Settings → Secrets and variables → Actions → New repository
 secret**.
