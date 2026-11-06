@@ -232,12 +232,15 @@ def merge_rows(existing, date_str, new_rows):
     return merged
 
 
-def looks_like_repeat(existing, new_rows):
+def looks_like_repeat(existing, new_rows, date_str):
     """Guard against recording the same session twice - on an NSE holiday the
-    scanner keeps serving the previous session's numbers."""
+    scanner keeps serving the previous session's numbers. Only a *newer* date
+    can be a repeat; re-running a date already in the file is an update."""
     if not existing or not new_rows:
         return False
     last_date = max(r.get("date", "") for r in existing)
+    if date_str <= last_date:
+        return False
     prev = {(r.get("symbol"), r.get("change_pct"))
             for r in existing if r.get("date") == last_date}
     curr = {(r.get("symbol"), r.get("change_pct")) for r in new_rows}
@@ -353,7 +356,7 @@ def run(args, day, date_str):
     csv_path = Path(args.csv)
     existing = read_csv(csv_path)
 
-    if not args.force and looks_like_repeat(existing, new_rows):
+    if not args.force and looks_like_repeat(existing, new_rows, date_str):
         return {"status": "repeat",
                 "message": f"<b>Price movers - {date_str}</b>\n"
                            f"Data identical to the previous session - treating "
