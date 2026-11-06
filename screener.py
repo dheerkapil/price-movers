@@ -204,7 +204,7 @@ def to_csv_rows(records, date_str):
             "volume": int(rec["volume"]) if rec["volume"] is not None else "",
             "avg_volume_10d": int(rec["avg_volume_10d"]),
             "rvol": f"{rec['rvol']:.2f}" if rec["rvol"] is not None else "",
-            "market_cap_cr": f"{rec['market_cap'] / CRORE:.2f}",
+            "market_cap_cr": f"{rec['market_cap'] / CRORE:.0f}",
             "exchange": "NSE",
         })
     rows.sort(key=lambda r: float(r["change_pct"]), reverse=True)
@@ -224,7 +224,7 @@ FORMATS = {
     "volume": "#,##0",
     "avg_volume_10d": "#,##0",
     "rvol": "0.00",
-    "market_cap_cr": "#,##0.00",
+    "market_cap_cr": "#,##0",
 }
 WIDTHS = {"date": 12, "symbol": 14, "company": 44, "close": 11,
           "change_pct": 12, "volume": 14, "avg_volume_10d": 16, "rvol": 9,
