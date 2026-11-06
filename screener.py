@@ -309,7 +309,12 @@ def deliver(token, chat_id, csv_path, caption, message):
         if "chat not found" not in str(exc):
             raise
         alt = resolve_chat_id(token)
-        if not alt or alt == chat_id:
+        if not alt:
+            raise RuntimeError(
+                f"Telegram says chat {chat_id} is unknown, and the bot has no "
+                f"recent messages to learn a working chat id from. Send the "
+                f"bot a message once (or correct TELEGRAM_CHAT_ID).") from None
+        if alt == chat_id:
             raise
         print(f"Chat id {chat_id} not found; retrying with {alt} "
               f"from the bot's updates.")
