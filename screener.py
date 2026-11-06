@@ -33,6 +33,7 @@ from openpyxl.utils import get_column_letter
 
 IST = ZoneInfo("Asia/Kolkata")
 SCAN_URL = "https://scanner.tradingview.com/india/scan"
+SEC_LIST_URL = "https://nsearchives.nseindia.com/content/equities/sec_list.csv"
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -68,6 +69,7 @@ FIELDS = [
     "rvol",
     "market_cap_cr",
     "exchange",
+    "series",
 ]
 
 CSV_PATH = Path(__file__).resolve().with_name("price_movers.csv")
@@ -139,6 +141,52 @@ def fetch_scan(attempts=4, timeout=30):
                        f"{last_error}")
 
 
+# ------------------------------------------------------------- NSE series
+def fetch_series_map(attempts=3, timeout=45):
+    """symbol -> series (EQ / BE / BZ / SM ...) from NSE's securities list.
+
+    This is the current classification, not a per-date one. Every row in the
+    file is normalised to it, so a stock that moved EQ -> BE shows BE on all
+    of its rows, however old.
+    """
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            r = requests.get(SEC_LIST_URL, headers={"User-Agent": USER_AGENT},
+                             timeout=timeout)
+            if r.status_code == 200:
+                out = {}
+                for row in csv.DictReader(r.text.splitlines()):
+                    sym = (row.get("Symbol") or "").strip().upper()
+                    ser = (row.get("Series") or "").strip().upper()
+                    if sym and ser:
+                        out[sym] = ser
+                if out:
+                    return out
+                last_error = "empty securities list"
+            else:
+                last_error = f"HTTP {r.status_code}"
+        except Exception as exc:                       # noqa: BLE001
+            last_error = f"{type(exc).__name__}: {exc}"
+        if attempt < attempts:
+            time.sleep(3 * attempt)
+    print(f"WARNING: could not load NSE series list ({last_error}); "
+          f"keeping the series already recorded.", file=sys.stderr)
+    return {}
+
+
+def apply_latest_series(rows, series_map):
+    """Rewrite the series column of *every* row to the symbol's current one."""
+    if not series_map:
+        return rows
+    for row in rows:
+        sym = str(row.get("symbol", "")).strip().upper()
+        current = series_map.get(sym)
+        if current:
+            row["series"] = current
+    return rows
+
+
 # ------------------------------------------------------------------ parsing
 def _num(value):
     try:
@@ -206,6 +254,7 @@ def to_csv_rows(records, date_str):
             "rvol": f"{rec['rvol']:.2f}" if rec["rvol"] is not None else "",
             "market_cap_cr": f"{rec['market_cap'] / CRORE:.0f}",
             "exchange": "NSE",
+            "series": "",
         })
     rows.sort(key=lambda r: float(r["change_pct"]), reverse=True)
     return rows
@@ -228,7 +277,7 @@ FORMATS = {
 }
 WIDTHS = {"date": 12, "symbol": 14, "company": 44, "close": 11,
           "change_pct": 12, "volume": 14, "avg_volume_10d": 16, "rvol": 9,
-          "market_cap_cr": 15, "exchange": 10}
+          "market_cap_cr": 15, "exchange": 10, "series": 9}
 
 
 def _text_to_cell(field, value):
@@ -461,6 +510,16 @@ def run(args, day, date_str):
                            f"today as a non-trading day. No rows written."}
 
     merged = merge_rows(existing, date_str, new_rows)
+
+    # The series column always reflects today's classification, applied to
+    # every row in the file - not the series a stock was in on that date.
+    series_map = {} if args.no_series else fetch_series_map()
+    if series_map:
+        apply_latest_series(merged, series_map)
+        known = sum(1 for r in merged if r.get("series"))
+        print(f"{date_str}: series applied to {known} of {len(merged)} rows "
+              f"from {len(series_map)} listed symbols")
+
     write_rows(merged, csv_path)
     xlsx_path = Path(args.xlsx)
     write_workbook(merged, xlsx_path)
@@ -489,6 +548,8 @@ def main(argv=None):
                                       "calling TradingView (offline testing)")
     ap.add_argument("--no-telegram", action="store_true",
                     help="skip the Telegram post")
+    ap.add_argument("--no-series", action="store_true",
+                    help="skip the NSE series lookup (offline runs)")
     ap.add_argument("--force", action="store_true",
                     help="run even on a weekend / holiday / repeat snapshot")
     args = ap.parse_args(argv)
