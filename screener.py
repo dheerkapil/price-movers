@@ -61,6 +61,7 @@ COLUMNS = [
 FIELDS = [
     "date",
     "symbol",
+    "fyers_code",
     "company",
     "close",
     "change_pct",
@@ -157,10 +158,10 @@ def fetch_series_map(attempts=3, timeout=45):
             if r.status_code == 200:
                 out = {}
                 for row in csv.DictReader(r.text.splitlines()):
-                    sym = (row.get("Symbol") or "").strip().upper()
+                    sym = (row.get("Symbol") or "").strip()
                     ser = (row.get("Series") or "").strip().upper()
                     if sym and ser:
-                        out[sym] = ser
+                        out[_norm(sym)] = {"symbol": sym.upper(), "series": ser}
                 if out:
                     return out
                 last_error = "empty securities list"
@@ -175,15 +176,24 @@ def fetch_series_map(attempts=3, timeout=45):
     return {}
 
 
+def _norm(symbol):
+    """TradingView writes M&M as NSE:M_M, so compare symbols with the
+    punctuation flattened."""
+    return str(symbol).strip().upper().replace("&", "_").replace("-", "_")
+
+
 def apply_latest_series(rows, series_map):
-    """Rewrite the series column of *every* row to the symbol's current one."""
+    """Rewrite series *and* the Fyers code of every row to the symbol's current
+    classification. The code reads NSE:<official symbol>-<series>."""
     if not series_map:
         return rows
     for row in rows:
-        sym = str(row.get("symbol", "")).strip().upper()
-        current = series_map.get(sym)
-        if current:
-            row["series"] = current
+        hit = series_map.get(_norm(row.get("symbol", "")))
+        if hit:
+            row["series"] = hit["series"]
+            row["fyers_code"] = f"NSE:{hit['symbol']}-{hit['series']}"
+        elif row.get("series"):
+            row["fyers_code"] = f"NSE:{row['symbol']}-{row['series']}"
     return rows
 
 
@@ -255,6 +265,7 @@ def to_csv_rows(records, date_str):
             "market_cap_cr": f"{rec['market_cap'] / CRORE:.0f}",
             "exchange": "NSE",
             "series": "",
+            "fyers_code": "",
         })
     rows.sort(key=lambda r: float(r["change_pct"]), reverse=True)
     return rows
@@ -275,7 +286,7 @@ FORMATS = {
     "rvol": "0.00",
     "market_cap_cr": "#,##0",
 }
-WIDTHS = {"date": 12, "symbol": 14, "company": 44, "close": 11,
+WIDTHS = {"date": 12, "symbol": 14, "fyers_code": 22, "company": 44, "close": 11,
           "change_pct": 12, "volume": 14, "avg_volume_10d": 16, "rvol": 9,
           "market_cap_cr": 15, "exchange": 10, "series": 9}
 
