@@ -184,16 +184,18 @@ def _norm(symbol):
 
 def apply_latest_series(rows, series_map):
     """Rewrite series *and* the Fyers code of every row to the symbol's current
-    classification. The code reads NSE:<official symbol>-<series>."""
+    classification. The code reads NSE:<official symbol>-<series>, followed by
+    a comma and a space so the column can be concatenated straight into a
+    broker request."""
     if not series_map:
         return rows
     for row in rows:
         hit = series_map.get(_norm(row.get("symbol", "")))
         if hit:
             row["series"] = hit["series"]
-            row["fyers_code"] = f"NSE:{hit['symbol']}-{hit['series']}"
+            row["fyers_code"] = f"NSE:{hit['symbol']}-{hit['series']}, "
         elif row.get("series"):
-            row["fyers_code"] = f"NSE:{row['symbol']}-{row['series']}"
+            row["fyers_code"] = f"NSE:{row['symbol']}-{row['series']}, "
     return rows
 
 
