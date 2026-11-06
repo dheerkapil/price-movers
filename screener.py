@@ -16,6 +16,7 @@ description of what went wrong.
 """
 
 import argparse
+import csv
 import json
 import os
 import sys
@@ -26,7 +27,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import requests
-from openpyxl import Workbook, load_workbook
+from openpyxl import Workbook
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
@@ -69,6 +70,7 @@ FIELDS = [
     "exchange",
 ]
 
+CSV_PATH = Path(__file__).resolve().with_name("price_movers.csv")
 XLSX_PATH = Path(__file__).resolve().with_name("price_movers.xlsx")
 SHEET_NAME = "movers"
 
@@ -219,18 +221,6 @@ WIDTHS = {"date": 12, "symbol": 14, "company": 44, "close": 11,
           "market_cap_cr": 15, "exchange": 10}
 
 
-def _cell_to_text(field, value):
-    """Read side: normalise whatever Excel gives back into the same text the
-    rest of the script compares against."""
-    if value is None or value == "":
-        return ""
-    if field in INTEGER:
-        return str(int(float(value)))
-    if field in NUMERIC:
-        return f"{float(value):.2f}"
-    return str(value)
-
-
 def _text_to_cell(field, value):
     """Write side: numbers go in as numbers."""
     if value is None or value == "":
@@ -242,27 +232,26 @@ def _text_to_cell(field, value):
     return str(value)
 
 
-def read_rows(path=XLSX_PATH):
+def read_rows(path=CSV_PATH):
+    """The CSV is the record of truth: line-oriented, cheap in git, diffable."""
     if not path.exists():
         return []
-    wb = load_workbook(path, read_only=True, data_only=True)
-    try:
-        ws = wb[SHEET_NAME] if SHEET_NAME in wb.sheetnames else wb.active
-        rows = []
-        header = None
-        for raw in ws.iter_rows(values_only=True):
-            if header is None:
-                header = [str(h) for h in raw if h is not None]
-                continue
-            if raw is None or all(v is None for v in raw):
-                continue
-            rows.append({f: _cell_to_text(f, v) for f, v in zip(header, raw)})
-        return rows
-    finally:
-        wb.close()
+    with path.open(newline="", encoding="utf-8") as fh:
+        return [dict(r) for r in csv.DictReader(fh)]
 
 
-def write_rows(rows, path=XLSX_PATH):
+def write_rows(rows, path=CSV_PATH):
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=FIELDS, extrasaction="ignore",
+                                lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def write_workbook(rows, path=XLSX_PATH):
+    """A throwaway Excel copy, built at send time for Telegram. Never committed:
+    every save rewrites the whole archive, so keeping it in git would cost far
+    more history than the CSV it came from."""
     wb = Workbook()
     ws = wb.active
     ws.title = SHEET_NAME
@@ -452,7 +441,7 @@ def run(args, day, date_str):
     print(f"{date_str}: {len(hits)} of {len(records)} rows pass the screen")
 
     new_rows = to_csv_rows(hits, date_str)
-    csv_path = Path(args.xlsx)
+    csv_path = Path(args.csv)
     existing = read_rows(csv_path)
 
     if not args.force and looks_like_repeat(existing, new_rows, date_str):
@@ -463,6 +452,8 @@ def run(args, day, date_str):
 
     merged = merge_rows(existing, date_str, new_rows)
     write_rows(merged, csv_path)
+    xlsx_path = Path(args.xlsx)
+    write_workbook(merged, xlsx_path)
     dates = len({r["date"] for r in merged})
     print(f"{date_str}: wrote {len(new_rows)} rows; file now holds "
           f"{len(merged)} rows across {dates} dates")
@@ -473,14 +464,17 @@ def run(args, day, date_str):
         caption = f"Price movers {date_str} - no NSE stock met the screen"
 
     return {"status": "ok", "caption": caption, "message": "",
-            "rows": len(new_rows), "total": len(merged), "csv": csv_path}
+            "rows": len(new_rows), "total": len(merged),
+            "csv": csv_path, "xlsx": xlsx_path}
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="NSE upside movers from TradingView")
     ap.add_argument("--date", help="run date, YYYY-MM-DD (default: today IST)")
+    ap.add_argument("--csv", default=str(CSV_PATH),
+                    help="CSV that records every session")
     ap.add_argument("--xlsx", default=str(XLSX_PATH),
-                    help="workbook to update")
+                    help="workbook built for sending (not committed)")
     ap.add_argument("--fixture", help="read a saved scanner response instead of "
                                       "calling TradingView (offline testing)")
     ap.add_argument("--no-telegram", action="store_true",
@@ -513,7 +507,7 @@ def main(argv=None):
 
         stage = "telegram"
         if result["status"] == "ok":
-            deliver(token, chat_id, result["csv"], result["caption"],
+            deliver(token, chat_id, result["xlsx"], result["caption"],
                     result["message"])
         else:
             deliver(token, chat_id, None, "", result["message"])
