@@ -16,7 +16,6 @@ description of what went wrong.
 """
 
 import argparse
-import csv
 import json
 import os
 import sys
@@ -27,6 +26,9 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import requests
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
 
 IST = ZoneInfo("Asia/Kolkata")
 SCAN_URL = "https://scanner.tradingview.com/india/scan"
@@ -67,7 +69,8 @@ FIELDS = [
     "exchange",
 ]
 
-CSV_PATH = Path(__file__).resolve().with_name("price_movers.csv")
+XLSX_PATH = Path(__file__).resolve().with_name("price_movers.xlsx")
+SHEET_NAME = "movers"
 
 # Fixed-date NSE holidays (certain every year). Variable-date holidays - Holi,
 # Diwali, Id, Good Friday etc. - must be added here by hand each January when
@@ -207,19 +210,81 @@ def to_csv_rows(records, date_str):
 
 
 # ------------------------------------------------------------------ the file
-def read_csv(path=CSV_PATH):
+# Columns stored as real numbers in the sheet, so Excel can sort and filter.
+NUMERIC = {"close", "change_pct", "volume", "avg_volume_10d", "rvol",
+           "market_cap_cr"}
+INTEGER = {"volume", "avg_volume_10d"}
+WIDTHS = {"date": 12, "symbol": 14, "company": 44, "close": 11,
+          "change_pct": 12, "volume": 14, "avg_volume_10d": 16, "rvol": 9,
+          "market_cap_cr": 15, "exchange": 10}
+
+
+def _cell_to_text(field, value):
+    """Read side: normalise whatever Excel gives back into the same text the
+    rest of the script compares against."""
+    if value is None or value == "":
+        return ""
+    if field in INTEGER:
+        return str(int(float(value)))
+    if field in NUMERIC:
+        return f"{float(value):.2f}"
+    return str(value)
+
+
+def _text_to_cell(field, value):
+    """Write side: numbers go in as numbers."""
+    if value is None or value == "":
+        return ""
+    if field in INTEGER:
+        return int(float(value))
+    if field in NUMERIC:
+        return float(value)
+    return str(value)
+
+
+def read_rows(path=XLSX_PATH):
     if not path.exists():
         return []
-    with path.open(newline="", encoding="utf-8") as fh:
-        return [dict(r) for r in csv.DictReader(fh)]
+    wb = load_workbook(path, read_only=True, data_only=True)
+    try:
+        ws = wb[SHEET_NAME] if SHEET_NAME in wb.sheetnames else wb.active
+        rows = []
+        header = None
+        for raw in ws.iter_rows(values_only=True):
+            if header is None:
+                header = [str(h) for h in raw if h is not None]
+                continue
+            if raw is None or all(v is None for v in raw):
+                continue
+            rows.append({f: _cell_to_text(f, v) for f, v in zip(header, raw)})
+        return rows
+    finally:
+        wb.close()
 
 
-def write_csv(rows, path=CSV_PATH):
-    with path.open("w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=FIELDS, extrasaction="ignore",
-                                lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(rows)
+def write_rows(rows, path=XLSX_PATH):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = SHEET_NAME
+    ws.append(FIELDS)
+    for col in range(1, len(FIELDS) + 1):
+        ws.cell(row=1, column=col).font = Font(bold=True)
+        letter = get_column_letter(col)
+        ws.column_dimensions[letter].width = WIDTHS.get(FIELDS[col - 1], 14)
+
+    for row in rows:
+        ws.append([_text_to_cell(f, row.get(f, "")) for f in FIELDS])
+
+    for col, field in enumerate(FIELDS, start=1):
+        if field in NUMERIC:
+            fmt = "#,##0" if field in INTEGER else "0.00"
+            for cell in ws.iter_cols(min_col=col, max_col=col, min_row=2):
+                for c in cell:
+                    c.number_format = fmt
+
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = f"A1:{get_column_letter(len(FIELDS))}{max(ws.max_row, 1)}"
+    wb.save(path)
 
 
 def merge_rows(existing, date_str, new_rows):
@@ -277,7 +342,9 @@ def send_document(token, chat_id, csv_path, caption):
         r = requests.post(f"https://api.telegram.org/bot{token}/sendDocument",
                           data={"chat_id": chat_id, "caption": caption,
                                 "parse_mode": "HTML"},
-                          files={"document": (csv_path.name, fh, "text/csv")},
+                          files={"document": (csv_path.name, fh,
+                                "application/vnd.openxmlformats-officedocument"
+                                ".spreadsheetml.sheet")},
                           timeout=120)
     if r.status_code != 200:
         raise RuntimeError(f"Telegram sendDocument HTTP {r.status_code}: "
@@ -385,8 +452,8 @@ def run(args, day, date_str):
     print(f"{date_str}: {len(hits)} of {len(records)} rows pass the screen")
 
     new_rows = to_csv_rows(hits, date_str)
-    csv_path = Path(args.csv)
-    existing = read_csv(csv_path)
+    csv_path = Path(args.xlsx)
+    existing = read_rows(csv_path)
 
     if not args.force and looks_like_repeat(existing, new_rows, date_str):
         return {"status": "repeat",
@@ -395,33 +462,25 @@ def run(args, day, date_str):
                            f"today as a non-trading day. No rows written."}
 
     merged = merge_rows(existing, date_str, new_rows)
-    write_csv(merged, csv_path)
+    write_rows(merged, csv_path)
     dates = len({r["date"] for r in merged})
     print(f"{date_str}: wrote {len(new_rows)} rows; file now holds "
           f"{len(merged)} rows across {dates} dates")
 
+    # The file is the message. Only a one-line label rides along with it.
     caption = f"Price movers {date_str} - {len(new_rows)} rows"
-    if new_rows:
-        top = new_rows[:5]
-        lines = [f"<b>Price movers - {date_str}</b>",
-                 f"{len(new_rows)} NSE stocks up 5% or more", ""]
-        for r in top:
-            lines.append(f"{r['symbol']}  +{r['change_pct']}%  "
-                         f"Rs {r['close']}  rvol {r['rvol']}")
-        if len(new_rows) > len(top):
-            lines.append(f"...and {len(new_rows) - len(top)} more in the CSV")
-    else:
-        lines = [f"<b>Price movers - {date_str}</b>",
-                 "No NSE stock met the screen today."]
+    if not new_rows:
+        caption = f"Price movers {date_str} - no NSE stock met the screen"
 
-    return {"status": "ok", "caption": caption, "message": "\n".join(lines),
+    return {"status": "ok", "caption": caption, "message": "",
             "rows": len(new_rows), "total": len(merged), "csv": csv_path}
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="NSE upside movers from TradingView")
     ap.add_argument("--date", help="run date, YYYY-MM-DD (default: today IST)")
-    ap.add_argument("--csv", default=str(CSV_PATH), help="CSV file to update")
+    ap.add_argument("--xlsx", default=str(XLSX_PATH),
+                    help="workbook to update")
     ap.add_argument("--fixture", help="read a saved scanner response instead of "
                                       "calling TradingView (offline testing)")
     ap.add_argument("--no-telegram", action="store_true",
