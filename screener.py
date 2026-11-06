@@ -293,6 +293,30 @@ def send_message(token, chat_id, text):
                            f"{r.text[:300]}")
 
 
+def deliver(token, chat_id, csv_path, caption, message):
+    """Post the CSV (or a note). If Telegram says the chat is unknown, look the
+    chat id up from the bot's own updates and try once more."""
+    def _post(cid):
+        if message:
+            send_message(token, cid, message)
+        else:
+            send_document(token, cid, csv_path, caption)
+
+    try:
+        _post(chat_id)
+        return chat_id
+    except RuntimeError as exc:
+        if "chat not found" not in str(exc):
+            raise
+        alt = resolve_chat_id(token)
+        if not alt or alt == chat_id:
+            raise
+        print(f"Chat id {chat_id} not found; retrying with {alt} "
+              f"from the bot's updates.")
+        _post(alt)
+        return alt
+
+
 def run_url():
     server = os.environ.get("GITHUB_SERVER_URL")
     repo = os.environ.get("GITHUB_REPOSITORY")
@@ -422,10 +446,10 @@ def main(argv=None):
 
         stage = "telegram"
         if result["status"] == "ok":
-            send_document(token, chat_id, result["csv"], result["caption"])
-            send_message(token, chat_id, result["message"])
+            deliver(token, chat_id, result["csv"], result["caption"],
+                    result["message"])
         else:
-            send_message(token, chat_id, result["message"])
+            deliver(token, chat_id, None, "", result["message"])
         print("Telegram post sent.")
         return 0
 
