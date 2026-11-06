@@ -43,6 +43,18 @@ Newest date first, biggest mover first within a date:
 | `rvol` | relative volume — today's volume ÷ 10-day average |
 | `market_cap_cr` | market cap, ₹ crore |
 | `exchange` | always `NSE` |
+| `series` | current NSE series — EQ, BE, BZ, SM — refreshed on every run |
+
+## The series column
+
+`series` comes from NSE's securities list (`sec_list.csv`), fetched on every run.
+It is **not** the series the stock traded in on that date: every row for a symbol
+is rewritten to the symbol's *current* classification. If a stock was BZ ten days
+ago, EQ five days ago and BE today, all three of its rows show BE after today's
+run. The file always reads as the position today, applied backwards.
+
+If the NSE list cannot be fetched, the run continues with the series already
+recorded and logs a warning rather than losing the day's data.
 
 ## Telegram
 
