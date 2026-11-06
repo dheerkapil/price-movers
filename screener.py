@@ -275,7 +275,8 @@ def resolve_chat_id(token, timeout=30):
 def send_document(token, chat_id, csv_path, caption):
     with csv_path.open("rb") as fh:
         r = requests.post(f"https://api.telegram.org/bot{token}/sendDocument",
-                          data={"chat_id": chat_id, "caption": caption},
+                          data={"chat_id": chat_id, "caption": caption,
+                                "parse_mode": "HTML"},
                           files={"document": (csv_path.name, fh, "text/csv")},
                           timeout=120)
     if r.status_code != 200:
@@ -297,10 +298,12 @@ def deliver(token, chat_id, csv_path, caption, message):
     """Post the CSV (or a note). If Telegram says the chat is unknown, look the
     chat id up from the bot's own updates and try once more."""
     def _post(cid):
-        if message:
-            send_message(token, cid, message)
+        # The file is the point of the message; the summary rides along as its
+        # caption. Only statuses with no file fall back to a plain message.
+        if csv_path:
+            send_document(token, cid, csv_path, message or caption)
         else:
-            send_document(token, cid, csv_path, caption)
+            send_message(token, cid, message)
 
     try:
         _post(chat_id)
