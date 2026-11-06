@@ -35,6 +35,7 @@ Newest date first, biggest mover first within a date:
 |---|---|
 | `date` | session date (YYYY-MM-DD, IST) |
 | `symbol` | NSE trading symbol |
+| `fyers_code` | broker code — `NSE:<symbol>-<series>`, e.g. `NSE:RELIANCE-EQ` |
 | `company` | company name |
 | `close` | closing price, ₹ |
 | `change_pct` | % change vs previous close |
@@ -52,6 +53,11 @@ It is **not** the series the stock traded in on that date: every row for a symbo
 is rewritten to the symbol's *current* classification. If a stock was BZ ten days
 ago, EQ five days ago and BE today, all three of its rows show BE after today's
 run. The file always reads as the position today, applied backwards.
+
+`fyers_code` is built from the same lookup: `NSE:`, the official NSE symbol and
+the current series. It uses NSE's own spelling, so a stock TradingView writes as
+`M_M` comes out as `NSE:M&M-EQ`. If a symbol is missing from NSE's list there is
+no code to build, and the cell is left empty rather than guessed.
 
 If the NSE list cannot be fetched, the run continues with the series already
 recorded and logs a warning rather than losing the day's data.
