@@ -216,6 +216,16 @@ def to_csv_rows(records, date_str):
 NUMERIC = {"close", "change_pct", "volume", "avg_volume_10d", "rvol",
            "market_cap_cr"}
 INTEGER = {"volume", "avg_volume_10d"}
+# Excel number formats: thousands separators wherever a value can reach four
+# digits, so prices, volumes and market caps read at a glance.
+FORMATS = {
+    "close": "#,##0.00",
+    "change_pct": "0.00",
+    "volume": "#,##0",
+    "avg_volume_10d": "#,##0",
+    "rvol": "0.00",
+    "market_cap_cr": "#,##0.00",
+}
 WIDTHS = {"date": 12, "symbol": 14, "company": 44, "close": 11,
           "change_pct": 12, "volume": 14, "avg_volume_10d": 16, "rvol": 9,
           "market_cap_cr": 15, "exchange": 10}
@@ -265,8 +275,8 @@ def write_workbook(rows, path=XLSX_PATH):
         ws.append([_text_to_cell(f, row.get(f, "")) for f in FIELDS])
 
     for col, field in enumerate(FIELDS, start=1):
-        if field in NUMERIC:
-            fmt = "#,##0" if field in INTEGER else "0.00"
+        fmt = FORMATS.get(field)
+        if fmt:
             for cell in ws.iter_cols(min_col=col, max_col=col, min_row=2):
                 for c in cell:
                     c.number_format = fmt
