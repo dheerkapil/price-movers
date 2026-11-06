@@ -1,0 +1,101 @@
+# price-movers
+
+Daily list of NSE stocks that moved **+5% or more**, filtered down to names worth
+watching — pulled entirely from the TradingView scanner feed, appended to a CSV,
+and posted to Telegram every trading day at **16:00 IST**.
+
+## The screen
+
+Every condition must hold on the day's close:
+
+| Condition | Value | TradingView field |
+|---|---|---|
+| Exchange | NSE only | `exchange` |
+| Day change | **≥ +5.0%** (upside only) | `change` |
+| Average volume, 10 days | **> 500,000** shares | `average_volume_10d_calc` |
+| Market cap | **> ₹100 crore** | `market_cap_basic` |
+| Last price | **> ₹19** | `close` |
+
+The filter runs server-side at TradingView, and every threshold is re-checked
+locally before a row is written, so the numbers in the CSV are exactly the ones
+above.
+
+## The output
+
+`price_movers.csv` lives in the repo and grows by one date block per session.
+Newest date first, biggest mover first within a date:
+
+| Column | Meaning |
+|---|---|
+| `date` | session date (YYYY-MM-DD, IST) |
+| `symbol` | NSE trading symbol |
+| `company` | company name |
+| `close` | closing price, ₹ |
+| `change_pct` | % change vs previous close |
+| `volume` | shares traded that day |
+| `avg_volume_10d` | 10-day average volume, shares |
+| `rvol` | relative volume — today's volume ÷ 10-day average |
+| `market_cap_cr` | market cap, ₹ crore |
+| `exchange` | always `NSE` |
+
+## Telegram
+
+Every run ends with **exactly one** Telegram message:
+
+- the updated `price_movers.csv` plus a short summary of the top movers, or
+- a failure alert naming the stage that broke and the error, with a link to the
+  workflow run, or
+- a note that there was no NSE session (weekend, holiday) or that the data was
+  identical to the previous session.
+
+## Setup
+
+The workflow needs two repository secrets:
+
+| Secret | Value |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | token of the `Price_alerts` bot |
+| `TELEGRAM_CHAT_ID` | chat id the CSV should be posted to |
+
+Add them under **Settings → Secrets and variables → Actions → New repository
+secret**.
+
+## Schedule
+
+`.github/workflows/daily.yml` runs at `30 10 * * 1-5` — 10:30 UTC, which is
+16:00 IST, Monday to Friday. GitHub's scheduler can start a run a few minutes
+late under load, and it does not know about NSE holidays; the script handles
+those itself. `workflow_dispatch` runs it on demand.
+
+## Running it locally
+
+```bash
+pip install -r requirements.txt
+export TELEGRAM_BOT_TOKEN=...   # optional
+export TELEGRAM_CHAT_ID=...     # optional
+
+python screener.py                       # today, live from TradingView
+python screener.py --no-telegram         # skip the post
+python screener.py --date 2026-11-06     # backfill a specific date's screen
+python screener.py --fixture tests/sample_scan.json --no-telegram   # offline
+```
+
+Useful flags: `--no-telegram`, `--fixture FILE`, `--force` (ignore the
+weekend/holiday/repeat-snapshot guards).
+
+## Known limits
+
+- **No history.** The scanner returns a live snapshot and takes no date
+  parameter, so this cannot reconstruct past screens. Rows only accumulate from
+  the day the workflow first runs.
+- **Market cap is live-only** for the same reason; it is TradingView's current
+  figure for the stock.
+- **Holidays.** Fixed-date NSE holidays are hardcoded in `screener.py`. The
+  variable ones (Holi, Diwali, Id, Good Friday and so on) need adding each
+  January when NSE publishes the next calendar — otherwise the repeat-snapshot
+  guard is what stops a holiday from being recorded as a session.
+- **One source.** All values, including rvol and market cap, come from
+  TradingView. If the scanner is rate-limited or changes its field names, the
+  run fails loudly rather than writing partial data.
+
+Not investment advice — a screening tool.
