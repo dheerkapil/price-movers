@@ -1,7 +1,7 @@
 # price-movers
 
 Daily list of NSE stocks that moved **+5% or more**, filtered down to names worth
-watching — pulled entirely from the TradingView scanner feed, appended to a CSV,
+watching — pulled entirely from the TradingView scanner feed, appended to an Excel workbook,
 and posted to Telegram every trading day at **16:00 IST**.
 
 ## The screen
@@ -22,7 +22,7 @@ above.
 
 ## The output
 
-`price_movers.csv` lives in the repo and grows by one date block per session.
+`price_movers.xlsx` lives in the repo and grows by one date block per session.
 Newest date first, biggest mover first within a date:
 
 | Column | Meaning |
@@ -42,7 +42,7 @@ Newest date first, biggest mover first within a date:
 
 Every run ends with **exactly one** Telegram message:
 
-- the updated `price_movers.csv` plus a short summary of the top movers, or
+- the updated `price_movers.xlsx`, or
 - a failure alert naming the stage that broke and the error, with a link to the
   workflow run, or
 - a note that there was no NSE session (weekend, holiday) or that the data was
