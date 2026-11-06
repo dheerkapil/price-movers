@@ -1,0 +1,69 @@
+name: Daily price movers
+
+on:
+  schedule:
+    # 16:00 IST (10:30 UTC), Monday to Friday.
+    - cron: "30 10 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Run date (YYYY-MM-DD). Leave blank for today."
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: price-movers
+  cancel-in-progress: false
+
+jobs:
+  screen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run the screen
+        id: screen
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -n "${{ inputs.date }}" ]; then
+            python screener.py --date "${{ inputs.date }}"
+          else
+            python screener.py
+          fi
+
+      - name: Commit the updated CSV
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add price_movers.csv
+          if git diff --staged --quiet; then
+            echo "No change to price_movers.csv"
+          else
+            git commit -m "data: movers for $(TZ=Asia/Kolkata date +%F)"
+            git push
+          fi
+
+      # Only fires when the screen never started (install/checkout failure),
+      # because screener.py already reports its own errors to Telegram.
+      - name: Report a setup failure
+        if: failure() && steps.screen.outcome == 'skipped'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          curl -sS --max-time 60 \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=price-movers: the workflow failed before the screen could run (setup step). Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
