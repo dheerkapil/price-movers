@@ -249,6 +249,26 @@ def _creds():
     return os.environ.get("TELEGRAM_BOT_TOKEN"), os.environ.get("TELEGRAM_CHAT_ID")
 
 
+def resolve_chat_id(token, timeout=30):
+    """Work out the chat id from the bot's own recent updates when
+    TELEGRAM_CHAT_ID is not configured (same idea as gift-nifty-oi's
+    resolve_chat.py). Send the bot any message once and it will be found."""
+    try:
+        r = requests.get(f"https://api.telegram.org/bot{token}/getUpdates",
+                         timeout=timeout)
+        payload = r.json()
+    except Exception as exc:                           # noqa: BLE001
+        print(f"Could not look up the chat id: {exc}", file=sys.stderr)
+        return None
+    for update in reversed(payload.get("result") or []):
+        msg = (update.get("message") or update.get("edited_message")
+               or update.get("channel_post") or {})
+        chat = msg.get("chat") or {}
+        if chat.get("id"):
+            return str(chat["id"])
+    return None
+
+
 def send_document(token, chat_id, csv_path, caption):
     with csv_path.open("rb") as fh:
         r = requests.post(f"https://api.telegram.org/bot{token}/sendDocument",
@@ -379,6 +399,10 @@ def main(argv=None):
            if args.date else datetime.now(IST).date())
     date_str = day.isoformat()
     token, chat_id = _creds()
+    if token and not chat_id:
+        chat_id = resolve_chat_id(token)
+        if chat_id:
+            print(f"Chat id {chat_id} resolved from the bot's recent updates.")
 
     stage = "start"
     try:
