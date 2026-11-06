@@ -22,7 +22,13 @@ above.
 
 ## The output
 
-`price_movers.xlsx` lives in the repo and grows by one date block per session.
+`price_movers.csv` lives in the repo and grows by one date block per session. It is
+the record: plain text, cheap to append in git, and readable as a diff.
+
+The Excel workbook (`price_movers.xlsx`) is built fresh at send time from that CSV
+and is **not** committed — every save rewrites the whole archive, so storing it
+daily would cost far more history than the CSV it came from. It exists only as the
+Telegram attachment.
 Newest date first, biggest mover first within a date:
 
 | Column | Meaning |
@@ -42,7 +48,7 @@ Newest date first, biggest mover first within a date:
 
 Every run ends with **exactly one** Telegram message:
 
-- the updated `price_movers.xlsx`, or
+- the updated Excel workbook, or
 - a failure alert naming the stage that broke and the error, with a link to the
   workflow run, or
 - a note that there was no NSE session (weekend, holiday) or that the data was
