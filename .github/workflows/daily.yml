@@ -47,9 +47,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add price_movers.xlsx
+          git add price_movers.csv
           if git diff --staged --quiet; then
-            echo "No change to price_movers.xlsx"
+            echo "No change to price_movers.csv"
           else
             git commit -m "data: movers for $(TZ=Asia/Kolkata date +%F)"
             git push
