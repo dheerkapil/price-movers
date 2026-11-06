@@ -35,7 +35,7 @@ Newest date first, biggest mover first within a date:
 |---|---|
 | `date` | session date (YYYY-MM-DD, IST) |
 | `symbol` | NSE trading symbol |
-| `fyers_code` | broker code — `NSE:<symbol>-<series>`, e.g. `NSE:RELIANCE-EQ` |
+| `fyers_code` | broker code — `NSE:<symbol>-<series>, ` (trailing comma + space), e.g. `NSE:RELIANCE-EQ, ` |
 | `company` | company name |
 | `close` | closing price, ₹ |
 | `change_pct` | % change vs previous close |
@@ -53,6 +53,11 @@ It is **not** the series the stock traded in on that date: every row for a symbo
 is rewritten to the symbol's *current* classification. If a stock was BZ ten days
 ago, EQ five days ago and BE today, all three of its rows show BE after today's
 run. The file always reads as the position today, applied backwards.
+
+Each `fyers_code` ends with a comma and a space, so the column can be
+concatenated straight into a broker request without a join step. Because the
+value then contains a comma, the CSV writer quotes that one field —
+`"NSE:RELIANCE-EQ, "` — which is ordinary CSV and parses back exactly.
 
 `fyers_code` is built from the same lookup: `NSE:`, the official NSE symbol and
 the current series. It uses NSE's own spelling, so a stock TradingView writes as
