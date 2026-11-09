@@ -22,7 +22,7 @@ import os
 import sys
 import time
 import traceback
-from datetime import datetime
+from datetime import datetime, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -500,6 +500,14 @@ def run(args, day, date_str):
                 "message": f"<b>Price movers - {date_str}</b>\n"
                            f"No NSE session today (weekend or holiday)."}
 
+    # A delayed trigger can land at any hour. Before the session has closed
+    # there is no EOD data for today - the feed still serves yesterday's, which
+    # the repeat guard would misread as a holiday. Refuse, quietly.
+    now_ist = datetime.now(IST)
+    if (not args.force and day == now_ist.date()
+            and now_ist.time() < time(15, 45)):
+        return {"status": "too_early", "message": ""}
+
     csv_path = Path(args.csv)
     existing = read_rows(csv_path)
 
@@ -589,6 +597,11 @@ def main(argv=None):
     try:
         stage = "screen"
         result = run(args, day, date_str)
+
+        if result["status"] == "too_early":
+            print(f"{date_str}: before the 15:45 IST close - no EOD data yet, "
+                  f"nothing to do.")
+            return 0
 
         if result["status"] == "already":
             print(f"{date_str}: already recorded - nothing to do.")
