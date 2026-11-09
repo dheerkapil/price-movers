@@ -500,6 +500,14 @@ def run(args, day, date_str):
                 "message": f"<b>Price movers - {date_str}</b>\n"
                            f"No NSE session today (weekend or holiday)."}
 
+    csv_path = Path(args.csv)
+    existing = read_rows(csv_path)
+
+    # Retry safety: scheduled slots repeat through the afternoon, so a later
+    # slot must not re-post a day that already landed.
+    if args.skip_if_present and any(r.get("date") == date_str for r in existing):
+        return {"status": "already", "message": ""}
+
     if args.fixture:
         with open(args.fixture, encoding="utf-8") as fh:
             body = json.load(fh)
@@ -513,8 +521,6 @@ def run(args, day, date_str):
     print(f"{date_str}: {len(hits)} of {len(records)} rows pass the screen")
 
     new_rows = to_csv_rows(hits, date_str)
-    csv_path = Path(args.csv)
-    existing = read_rows(csv_path)
 
     if not args.force and looks_like_repeat(existing, new_rows, date_str):
         return {"status": "repeat",
@@ -561,6 +567,9 @@ def main(argv=None):
                                       "calling TradingView (offline testing)")
     ap.add_argument("--no-telegram", action="store_true",
                     help="skip the Telegram post")
+    ap.add_argument("--skip-if-present", action="store_true",
+                    help="do nothing if this date is already in the file "
+                         "(used by the repeated scheduled slots)")
     ap.add_argument("--no-series", action="store_true",
                     help="skip the NSE series lookup (offline runs)")
     ap.add_argument("--force", action="store_true",
@@ -580,6 +589,10 @@ def main(argv=None):
     try:
         stage = "screen"
         result = run(args, day, date_str)
+
+        if result["status"] == "already":
+            print(f"{date_str}: already recorded - nothing to do.")
+            return 0
 
         if args.no_telegram:
             print("Telegram post skipped (--no-telegram).")
