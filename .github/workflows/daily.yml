@@ -2,14 +2,20 @@ name: Daily price movers
 
 on:
   schedule:
-    # Four attempts through the afternoon, all in IST: 16:00, 16:30, 17:00,
-    # 17:30. The first that succeeds records the day; the rest see the date
-    # already present and exit without posting. This survives a scheduler
-    # delay or a transient failure at any one slot.
+    # Nine attempts, every half hour from 16:00 to 20:00 IST (10:30-14:30 UTC),
+    # Monday to Friday. The first that succeeds records the day; the rest see
+    # the date already present and exit without posting. Anything that starts
+    # before the 15:45 IST close is refused by the script. The spread exists so
+    # a scheduler delay or a transient failure at one slot cannot lose a day.
     - cron: "30 10 * * 1-5"
     - cron: "0 11 * * 1-5"
     - cron: "30 11 * * 1-5"
     - cron: "0 12 * * 1-5"
+    - cron: "30 12 * * 1-5"
+    - cron: "0 13 * * 1-5"
+    - cron: "30 13 * * 1-5"
+    - cron: "0 14 * * 1-5"
+    - cron: "30 14 * * 1-5"
   workflow_dispatch:
     inputs:
       date:
